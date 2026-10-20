@@ -48,7 +48,7 @@ jobs:
           test -s build/Ports.app/Contents/Resources/Ports.icns
           test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' build/Ports.app/Contents/Info.plist)" = Ports
           test "$(/usr/libexec/PlistBuddy -c 'Print LSUIElement' build/Ports.app/Contents/Info.plist)" = true
-          lipo -verify_arch '${{ matrix.arch }}' build/Ports.app/Contents/MacOS/Ports
+          lipo build/Ports.app/Contents/MacOS/Ports -verify_arch '${{ matrix.arch }}'
           codesign --verify --strict build/Ports.app
 
       - name: Create downloadable archive
