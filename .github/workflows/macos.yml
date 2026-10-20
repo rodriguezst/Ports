@@ -1,0 +1,63 @@
+name: Build Ports for macOS
+
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ports-macos-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    name: Test and build (${{ matrix.arch }})
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - runner: macos-15
+            arch: arm64
+          - runner: macos-15-intel
+            arch: x86_64
+    runs-on: ${{ matrix.runner }}
+    timeout-minutes: 20
+    steps:
+      - name: Check out source
+        uses: actions/checkout@v6
+        with:
+          persist-credentials: false
+
+      - name: Show toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Run tests
+        run: swift test
+
+      - name: Build app bundle
+        run: ./scripts/build-app.sh
+
+      - name: Verify bundle
+        run: |
+          test -x build/Ports.app/Contents/MacOS/Ports
+          test -s build/Ports.app/Contents/Resources/Ports.icns
+          test "$(/usr/libexec/PlistBuddy -c 'Print CFBundleName' build/Ports.app/Contents/Info.plist)" = Ports
+          test "$(/usr/libexec/PlistBuddy -c 'Print LSUIElement' build/Ports.app/Contents/Info.plist)" = true
+          lipo -verify_arch '${{ matrix.arch }}' build/Ports.app/Contents/MacOS/Ports
+          codesign --verify --strict build/Ports.app
+
+      - name: Create downloadable archive
+        run: ditto -c -k --sequesterRsrc --keepParent build/Ports.app 'build/Ports-macOS-${{ matrix.arch }}.zip'
+
+      - name: Upload Ports
+        uses: actions/upload-artifact@v4
+        with:
+          name: Ports-macOS-${{ matrix.arch }}
+          path: build/Ports-macOS-${{ matrix.arch }}.zip
+          if-no-files-found: error
+          retention-days: 14
