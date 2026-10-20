@@ -68,8 +68,14 @@ import XCTest
         """, interpreter: "/usr/bin/python3")
         let command = try SSHCommand(for: sampleForwarding(), askpassExecutable: "/unused")
         let session = SystemSSHSession(command: command, executableURL: executable)
+        let ready = expectation(description: "Fixture started")
         let exited = expectation(description: "Parent exit detected without waiting for child")
-        try session.start { event in if case .exited = event { exited.fulfill() } }
+        try session.start { event in
+            if event == .ready { ready.fulfill() }
+            if case .exited = event { exited.fulfill() }
+        }
+        // Cold interpreter startup on CI is independent of parent-exit detection.
+        await fulfillment(of: [ready], timeout: 10)
         await fulfillment(of: [exited], timeout: 2)
     }
 }
