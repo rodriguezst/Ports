@@ -40,6 +40,21 @@ final class ConfigurationStoreTests: XCTestCase {
         }
     }
 
+    func testDuplicateCanBeSavedAndEditedWithoutChangingOriginal() throws {
+        let store = ConfigurationStore(url: try temporaryURL())
+        let original = sampleForwarding()
+        var copy = original.duplicated()
+        try store.save([original, copy])
+        XCTAssertEqual(try store.load(), [original, copy])
+
+        copy.label = "Analytics database"
+        copy.localPort += 1
+        copy.destinationPort += 1
+        copy.isEnabled = true
+        try store.save([original, copy])
+        XCTAssertEqual(try store.load(), [original, copy])
+    }
+
     func testInvalidSaveDoesNotReplaceExistingConfiguration() throws {
         let url = try temporaryURL()
         let store = ConfigurationStore(url: url)

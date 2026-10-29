@@ -3,11 +3,12 @@ import Combine
 import SwiftUI
 import PortsCore
 
-@MainActor final class AppDelegate: NSObject, NSApplicationDelegate {
+@MainActor final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     private var store: AppStore!
     private var statusItem: NSStatusItem!
     private var settingsWindow: NSWindow?
     private var observation: AnyCancellable?
+    private var forwardingMenu: ForwardingMenu!
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         installApplicationMenu()
@@ -18,8 +19,18 @@ import PortsCore
             image.isTemplate = true
             statusItem.button?.image = image
         } else { statusItem.button?.title = "P" }
+        forwardingMenu = ForwardingMenu(target: self, toggleAction: #selector(toggleForwarding(_:)),
+                                        settingsAction: #selector(showSettings), quitAction: #selector(quit))
+        forwardingMenu.menu.delegate = self
+        statusItem.menu = forwardingMenu.menu
         observation = store.$forwardings.combineLatest(store.$states).sink { [weak self] connections, states in
-            self?.updateMenu(connections: connections, states: states)
+            // Menu tracking uses its own run loop mode. Deliver updates there
+            // as well as during the normal application run loop.
+            RunLoop.main.perform(inModes: [.common]) { [weak self] in
+                MainActor.assumeIsolated {
+                    self?.updateMenu(connections: connections, states: states)
+                }
+            }
         }
         let notifications = NSWorkspace.shared.notificationCenter
         notifications.addObserver(self, selector: #selector(willSleep), name: NSWorkspace.willSleepNotification, object: nil)
@@ -39,43 +50,15 @@ import PortsCore
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
     private func updateMenu(connections: [Forwarding], states: [UUID: TunnelState]) {
-        let menu = NSMenu()
-        menu.autoenablesItems = false
+        forwardingMenu.update(connections: connections, states: states)
         let connected = connections.filter { states[$0.id] == .connected }.count
         let enabled = connections.filter(\.isEnabled).count
-        let heading = NSMenuItem(title: "Ports · \(connected) connected", action: nil, keyEquivalent: "")
-        heading.isEnabled = false
-        menu.addItem(heading)
-        menu.addItem(.separator())
-        if connections.isEmpty {
-            let empty = NSMenuItem(title: "No port forwardings configured", action: nil, keyEquivalent: "")
-            empty.isEnabled = false
-            menu.addItem(empty)
-        }
-        for connection in connections {
-            let state = states[connection.id] ?? .disabled
-            let item = NSMenuItem(title: "\(connection.label) — \(state.title)", action: #selector(toggleForwarding(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = connection.id.uuidString
-            item.state = connection.isEnabled ? .on : .off
-            item.toolTip = "\(connection.localEndpoint) → \(connection.destinationEndpoint) via \(connection.sshEndpoint)\n\(state.detail)"
-            menu.addItem(item)
-        }
-        if !connections.isEmpty {
-            let hint = NSMenuItem(title: "✓ Enabled connections reconnect automatically", action: nil, keyEquivalent: "")
-            hint.isEnabled = false
-            menu.addItem(hint)
-        }
-        menu.addItem(.separator())
-        let settings = NSMenuItem(title: "Settings…", action: #selector(showSettings), keyEquivalent: ",")
-        settings.target = self
-        menu.addItem(settings)
-        let quit = NSMenuItem(title: "Quit Ports", action: #selector(quit), keyEquivalent: "q")
-        quit.target = self
-        menu.addItem(quit)
-        statusItem.menu = menu
         statusItem.button?.toolTip = "Ports: \(connected) connected, \(enabled) enabled"
         statusItem.button?.setAccessibilityLabel("Ports: \(connected) connected, \(enabled) enabled")
+    }
+
+    func menuNeedsUpdate(_ menu: NSMenu) {
+        updateMenu(connections: store.forwardings, states: store.states)
     }
 
     @objc private func toggleForwarding(_ sender: NSMenuItem) {

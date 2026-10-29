@@ -43,6 +43,10 @@ The macOS UI and bundle must be compiled on macOS. The forwarding engine and its
 4. Enable the forwarding in Settings or click it in the menu bar. A **tick means enabled**, including while it is connecting, retrying, or waiting for the network. The adjacent status shows whether the tunnel is connected.
 5. Uncheck it to stop the tunnel and cancel retries. **Settings…** opens the configuration UI; **Quit Ports** stops all SSH processes while preserving your enabled choices for the next launch.
 
+To start from an existing configuration, select it in Settings and choose **Duplicate…**, or right-click it in the sidebar. The editor opens with a new name and the same connection settings. Change the label and ports, then choose **Add Forwarding**. The copy starts disabled; saved passwords or key passphrases are copied into its own Keychain entry when you save. Cancel leaves the original unchanged and creates no forwarding or credentials.
+
+Connection statuses and the connected count update while the menu bar menu is open, including when a tunnel connects, disconnects, or starts retrying.
+
 For example, forwarding `127.0.0.1:15432` through `deploy@bastion.example.com:22` to `db.internal:5432` lets local applications access the remote database at `127.0.0.1:15432`. The destination address is resolved by the SSH host; destination `localhost` refers to that remote host.
 
 Bind to `127.0.0.1` or `::1` for access from your Mac. Binding to `0.0.0.0`, `::`, or a LAN interface makes the local listener accessible on those interfaces. IPv4 and IPv6 addresses are supported. Ports reports listener binding errors and prevents enabled entries with obviously overlapping local listeners.
@@ -84,6 +88,6 @@ Each forwarding has independent desired state, SSH process, status, timeout, and
 - `Tests/PortsCoreTests`: deterministic network/retry/lifecycle tests, real subprocess output and termination tests, configuration and SSH argument tests.
 - `scripts/build-app.sh`: release app packaging and signing.
 
-For a manual macOS check, add a forwarding to an SSH host you control, verify data reaches the destination, disconnect/reconnect Wi-Fi, sleep/wake your Mac, disable an entry while it is retrying, edit an enabled entry, and quit/reopen Ports. Confirm ticks persist through outages, disabled entries stay stopped, and no listener remains after quitting.
+For a manual macOS check, add a forwarding to an SSH host you control, verify data reaches the destination, disconnect/reconnect Wi-Fi, sleep/wake your Mac, disable an entry while it is retrying, edit an enabled entry, and quit/reopen Ports. Confirm ticks persist through outages, disabled entries stay stopped, and no listener remains after quitting. Duplicate an enabled forwarding, change its label and ports, and confirm it saves disabled without changing the original. Keep the menu open through a connection or network transition and confirm the status and connected count change without reopening it.
 
 Implementation references: [Apple NSStatusItem](https://developer.apple.com/documentation/appkit/nsstatusitem), [OpenSSH client](https://man.openbsd.org/ssh.1), [OpenSSH connection options](https://man.openbsd.org/ssh_config.5), and [GitHub's macOS runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).

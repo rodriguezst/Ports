@@ -5,6 +5,7 @@ import PortsCore
 @MainActor struct ForwardingEditor: View {
     @ObservedObject var store: AppStore
     let isNew: Bool
+    let credentialSource: Forwarding?
     let onSave: (UUID) -> Void
     @Environment(\.dismiss) private var dismiss
     @State private var forwarding: Forwarding
@@ -16,9 +17,11 @@ import PortsCore
     @State private var errorMessage: String?
     @State private var copied = false
 
-    init(store: AppStore, forwarding: Forwarding, isNew: Bool, onSave: @escaping (UUID) -> Void) {
+    init(store: AppStore, forwarding: Forwarding, isNew: Bool, credentialSource: Forwarding? = nil,
+         onSave: @escaping (UUID) -> Void) {
         self.store = store
         self.isNew = isNew
+        self.credentialSource = credentialSource
         self.onSave = onSave
         _forwarding = State(initialValue: forwarding)
         _localPort = State(initialValue: String(forwarding.localPort))
@@ -27,14 +30,17 @@ import PortsCore
     }
 
     private var hasSavedSecret: Bool {
-        KeychainCredentials.contains(id: forwarding.id, kind: forwarding.authentication)
+        if KeychainCredentials.contains(id: forwarding.id, kind: forwarding.authentication) { return true }
+        guard let credentialSource, credentialSource.authentication == forwarding.authentication else { return false }
+        return KeychainCredentials.contains(id: credentialSource.id, kind: forwarding.authentication)
     }
 
     var body: some View {
         VStack(spacing: 0) {
             HStack {
                 Image(systemName: "arrow.left.arrow.right").foregroundStyle(.tint)
-                Text(isNew ? "Add Forwarding" : "Edit Forwarding").font(.title2.weight(.semibold))
+                Text(credentialSource != nil ? "Duplicate Forwarding" : (isNew ? "Add Forwarding" : "Edit Forwarding"))
+                    .font(.title2.weight(.semibold))
                 Spacer()
             }.padding(22)
             Divider()
@@ -130,7 +136,7 @@ import PortsCore
         value.destinationPort = destination
         let credential: String? = removePassphrase ? "" : (secret.isEmpty ? nil : secret)
         do {
-            try store.save(value, secret: credential)
+            try store.save(value, secret: credential, copyingCredentialsFrom: credentialSource?.id)
             secret = ""
             onSave(value.id)
         } catch { errorMessage = error.localizedDescription }

@@ -49,10 +49,17 @@ import PortsCore
         }
     }
 
-    func save(_ forwarding: Forwarding, secret: String?) throws {
+    func save(_ forwarding: Forwarding, secret: String?, copyingCredentialsFrom sourceID: UUID? = nil) throws {
         guard !configurationUnavailable else { throw ConfigurationError("Reload the configuration before making changes.") }
         let forwarding = forwarding.normalized()
         try forwarding.validate()
+        var secret = secret
+        if secret == nil, forwarding.authentication != .agent,
+           !forwardings.contains(where: { $0.id == forwarding.id }),
+           let source = forwardings.first(where: { $0.id == sourceID }),
+           source.authentication == forwarding.authentication {
+            secret = try KeychainCredentials.read(id: source.id, kind: forwarding.authentication)
+        }
         if forwarding.authentication == .privateKey {
             let path = (forwarding.privateKeyPath as NSString).expandingTildeInPath
             var directory: ObjCBool = false

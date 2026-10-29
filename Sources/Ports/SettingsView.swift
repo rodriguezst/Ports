@@ -5,6 +5,7 @@ import PortsCore
 private struct EditorRequest: Identifiable {
     let forwarding: Forwarding
     let isNew: Bool
+    var credentialSource: Forwarding? = nil
     var id: UUID { forwarding.id }
 }
 
@@ -47,6 +48,10 @@ private struct EditorRequest: Identifiable {
                         }
                         .padding(.vertical, 5)
                         .tag(forwarding.id)
+                        .contextMenu {
+                            Button("Duplicate…") { duplicate(forwarding) }
+                                .disabled(store.configurationUnavailable)
+                        }
                     }
                 }
                 .listStyle(.sidebar)
@@ -79,6 +84,7 @@ private struct EditorRequest: Identifiable {
                     state: store.states[selected.id] ?? .disabled,
                     setEnabled: { store.setEnabled($0, id: selected.id) },
                     edit: { editor = EditorRequest(forwarding: selected, isNew: false) },
+                    duplicate: { duplicate(selected) },
                     reconnect: { store.reconnect(selected.id) },
                     delete: { confirmingDeletion = true }
                 )
@@ -97,7 +103,8 @@ private struct EditorRequest: Identifiable {
         }
         .frame(minWidth: 760, minHeight: 500)
         .sheet(item: $editor) { request in
-            ForwardingEditor(store: store, forwarding: request.forwarding, isNew: request.isNew) { savedID in
+            ForwardingEditor(store: store, forwarding: request.forwarding, isNew: request.isNew,
+                             credentialSource: request.credentialSource) { savedID in
                 selection = savedID
                 editor = nil
             }
@@ -120,6 +127,11 @@ private struct EditorRequest: Identifiable {
     private func add() {
         editor = EditorRequest(forwarding: Forwarding(sshUsername: NSUserName()), isNew: true)
     }
+
+    private func duplicate(_ forwarding: Forwarding) {
+        let copy = forwarding.duplicated(existingLabels: Set(store.forwardings.map(\.label)))
+        editor = EditorRequest(forwarding: copy, isNew: true, credentialSource: forwarding)
+    }
 }
 
 private struct ForwardingDetail: View {
@@ -127,6 +139,7 @@ private struct ForwardingDetail: View {
     let state: TunnelState
     let setEnabled: (Bool) -> Void
     let edit: () -> Void
+    let duplicate: () -> Void
     let reconnect: () -> Void
     let delete: () -> Void
 
@@ -180,6 +193,7 @@ private struct ForwardingDetail: View {
 
                 HStack {
                     Button("Edit…", action: edit)
+                    Button("Duplicate…", action: duplicate)
                     Button("Reconnect Now", action: reconnect).disabled(!forwarding.isEnabled)
                     Spacer()
                     Button(role: .destructive, action: delete) { Image(systemName: "trash") }

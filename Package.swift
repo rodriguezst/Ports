@@ -10,6 +10,7 @@ var targets: [Target] = [
 #if os(macOS)
 products.append(.executable(name: "Ports", targets: ["Ports"]))
 targets.append(.executableTarget(name: "Ports", dependencies: ["PortsCore"]))
+targets.append(.testTarget(name: "PortsTests", dependencies: ["Ports", "PortsCore"]))
 #endif
 
 let package = Package(

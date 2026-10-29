@@ -68,6 +68,19 @@ public struct Forwarding: Codable, Equatable, Identifiable, Sendable {
     public var destinationEndpoint: String { "\(Self.bracketed(destinationHost)):\(destinationPort)" }
     public var sshEndpoint: String { "\(sshUsername)@\(Self.bracketed(sshHost)):\(sshPort)" }
 
+    public func duplicated(existingLabels: Set<String> = []) -> Forwarding {
+        var copy = self
+        copy.id = UUID()
+        copy.isEnabled = false
+        var number = 1
+        repeat {
+            let suffix = number == 1 ? " Copy" : " Copy \(number)"
+            copy.label = String(label.prefix(120 - suffix.count)) + suffix
+            number += 1
+        } while existingLabels.contains(copy.label)
+        return copy
+    }
+
     public func normalized() -> Forwarding {
         var value = self
         value.label = label.trimmingCharacters(in: .whitespacesAndNewlines)

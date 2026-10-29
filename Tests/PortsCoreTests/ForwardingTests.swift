@@ -8,6 +8,47 @@ func sampleForwarding(enabled: Bool = true) -> Forwarding {
 }
 
 final class ForwardingTests: XCTestCase {
+    func testDuplicatePreservesConnectionSettingsWithIndependentDisabledIdentity() throws {
+        for authentication in Authentication.allCases {
+            var original = sampleForwarding()
+            original.authentication = authentication
+            original.privateKeyPath = "~/.ssh/development"
+            original.sshPort = 2222
+            original.localBindAddress = "::1"
+            original.hostKeyPolicy = .acceptNew
+            let copy = original.duplicated()
+
+            XCTAssertNotEqual(copy.id, original.id)
+            XCTAssertNotEqual(copy.id, original.duplicated().id)
+            XCTAssertEqual(copy.label, "Database Copy")
+            XCTAssertFalse(copy.isEnabled)
+            XCTAssertTrue(original.isEnabled)
+            XCTAssertEqual(original.label, "Database")
+            var expected = original
+            expected.id = copy.id
+            expected.label = copy.label
+            expected.isEnabled = false
+            XCTAssertEqual(copy, expected)
+            XCTAssertNoThrow(try Forwarding.validateAll([original, copy]))
+        }
+    }
+
+    func testDuplicateSuggestsAnUnusedNameWithinLabelLengthLimit() throws {
+        let original = sampleForwarding(enabled: false)
+        let copy = original.duplicated(existingLabels: ["Database", "Database Copy", "Database Copy 2"])
+        XCTAssertEqual(copy.label, "Database Copy 3")
+
+        var longName = original
+        longName.label = String(repeating: "é", count: 120)
+        let first = longName.duplicated()
+        let second = longName.duplicated(existingLabels: [first.label])
+        XCTAssertEqual(first.label.count, 120)
+        XCTAssertEqual(second.label.count, 120)
+        XCTAssertTrue(second.label.hasSuffix(" Copy 2"))
+        XCTAssertNoThrow(try first.validate())
+        XCTAssertNoThrow(try second.validate())
+    }
+
     func testNormalizationAndIPv6ForwardingArguments() throws {
         var forwarding = sampleForwarding()
         forwarding.label = "  Database  "
