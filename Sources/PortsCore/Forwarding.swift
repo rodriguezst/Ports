@@ -40,6 +40,7 @@ public struct Forwarding: Codable, Equatable, Identifiable, Sendable {
     public var destinationPort: Int
     public var hostKeyPolicy: HostKeyPolicy
     public var isEnabled: Bool
+    public var groupID: UUID?
 
     public init(
         id: UUID = UUID(), label: String = "", localBindAddress: String = "127.0.0.1",
@@ -47,7 +48,7 @@ public struct Forwarding: Codable, Equatable, Identifiable, Sendable {
         sshUsername: String = "", authentication: Authentication = .agent,
         privateKeyPath: String = "", destinationHost: String = "localhost",
         destinationPort: Int = 80, hostKeyPolicy: HostKeyPolicy = .strict,
-        isEnabled: Bool = false
+        isEnabled: Bool = false, groupID: UUID? = nil
     ) {
         self.id = id
         self.label = label
@@ -62,6 +63,7 @@ public struct Forwarding: Codable, Equatable, Identifiable, Sendable {
         self.destinationPort = destinationPort
         self.hostKeyPolicy = hostKeyPolicy
         self.isEnabled = isEnabled
+        self.groupID = groupID
     }
 
     public var localEndpoint: String { "\(Self.bracketed(localBindAddress)):\(localPort)" }

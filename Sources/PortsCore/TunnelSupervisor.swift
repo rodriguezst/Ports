@@ -93,7 +93,10 @@ public enum TunnelState: Equatable, Sendable {
         }
         for connection in forwardings {
             if runtimes[connection.id] == nil { runtimes[connection.id] = Runtime() }
-            reconcile(connection.id, restart: previous[connection.id] != connection)
+            // Group membership is organizational and does not change the SSH session.
+            var previousConnection = previous[connection.id]
+            previousConnection?.groupID = connection.groupID
+            reconcile(connection.id, restart: previousConnection != connection)
         }
         onChange?()
     }

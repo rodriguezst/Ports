@@ -20,15 +20,16 @@ import PortsCore
             statusItem.button?.image = image
         } else { statusItem.button?.title = "P" }
         forwardingMenu = ForwardingMenu(target: self, toggleAction: #selector(toggleForwarding(_:)),
+                                        groupToggleAction: #selector(toggleGroup(_:)),
                                         settingsAction: #selector(showSettings), quitAction: #selector(quit))
         forwardingMenu.menu.delegate = self
         statusItem.menu = forwardingMenu.menu
-        observation = store.$forwardings.combineLatest(store.$states).sink { [weak self] connections, states in
+        observation = store.$configuration.combineLatest(store.$states).sink { [weak self] configuration, states in
             // Menu tracking uses its own run loop mode. Deliver updates there
             // as well as during the normal application run loop.
             RunLoop.main.perform(inModes: [.common]) { [weak self] in
                 MainActor.assumeIsolated {
-                    self?.updateMenu(connections: connections, states: states)
+                    self?.updateMenu(configuration: configuration, states: states)
                 }
             }
         }
@@ -49,8 +50,9 @@ import PortsCore
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool { false }
 
-    private func updateMenu(connections: [Forwarding], states: [UUID: TunnelState]) {
-        forwardingMenu.update(connections: connections, states: states)
+    private func updateMenu(configuration: Configuration, states: [UUID: TunnelState]) {
+        let connections = configuration.forwardings
+        forwardingMenu.update(connections: connections, groups: configuration.groups, states: states)
         let connected = connections.filter { states[$0.id] == .connected }.count
         let enabled = connections.filter(\.isEnabled).count
         statusItem.button?.toolTip = "Ports: \(connected) connected, \(enabled) enabled"
@@ -58,13 +60,19 @@ import PortsCore
     }
 
     func menuNeedsUpdate(_ menu: NSMenu) {
-        updateMenu(connections: store.forwardings, states: store.states)
+        updateMenu(configuration: store.configuration, states: store.states)
     }
 
     @objc private func toggleForwarding(_ sender: NSMenuItem) {
         guard let rawID = sender.representedObject as? String, let id = UUID(uuidString: rawID),
               let forwarding = store.forwardings.first(where: { $0.id == id }) else { return }
         store.setEnabled(!forwarding.isEnabled, id: id)
+        if store.errorMessage != nil { showSettings() }
+    }
+
+    @objc private func toggleGroup(_ sender: NSMenuItem) {
+        guard let rawID = sender.representedObject as? String, let id = UUID(uuidString: rawID) else { return }
+        store.setGroupEnabled(store.configuration.enabledState(of: id) != .enabled, id: id)
         if store.errorMessage != nil { showSettings() }
     }
 

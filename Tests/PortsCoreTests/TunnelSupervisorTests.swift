@@ -51,6 +51,49 @@ import XCTest
 }
 
 @MainActor final class TunnelSupervisorTests: XCTestCase {
+    func testChangingOrRemovingGroupMembershipDoesNotRestartConnectedTunnel() async {
+        let h = Harness()
+        var forwarding = sampleForwarding()
+        h.supervisor.apply([forwarding])
+        h.sessions[0].emit(.ready)
+        forwarding.groupID = UUID()
+        h.supervisor.apply([forwarding])
+        forwarding.groupID = UUID()
+        h.supervisor.apply([forwarding])
+        forwarding.groupID = nil
+        h.supervisor.apply([forwarding])
+        XCTAssertEqual(h.sessions.count, 1)
+        XCTAssertEqual(h.sessions[0].stops, 0)
+        XCTAssertEqual(h.supervisor.states[forwarding.id], .connected)
+    }
+
+    func testGroupEnableAndDisableStartMembersAndCancelActiveAndRetryingSessions() async throws {
+        let h = Harness()
+        let group = ForwardingGroup(name: "Development")
+        var first = sampleForwarding(enabled: false)
+        first.groupID = group.id
+        var second = first.duplicated()
+        second.localPort += 1
+        var configuration = Configuration(forwardings: [first, second], groups: [group])
+        h.supervisor.apply(configuration.forwardings)
+        XCTAssertTrue(h.sessions.isEmpty)
+
+        configuration = try configuration.settingGroupEnabled(true, id: group.id)
+        h.supervisor.apply(configuration.forwardings)
+        XCTAssertEqual(h.sessions.count, 2)
+        h.sessions[0].emit(.ready)
+        h.sessions[1].emit(.exited(255))
+        configuration = try configuration.settingGroupEnabled(false, id: group.id)
+        h.supervisor.apply(configuration.forwardings)
+        XCTAssertEqual(h.sessions[0].stops, 1)
+        h.sessions[0].emit(.exited(15))
+        h.clock.advance(300)
+        XCTAssertEqual(h.sessions.count, 2)
+        XCTAssertEqual(h.supervisor.states[first.id], .disabled)
+        XCTAssertEqual(h.supervisor.states[second.id], .disabled)
+        XCTAssertFalse(h.supervisor.hasRunningSessions)
+    }
+
     func testEnableBecomesConnectedOnlyAfterReadinessAndUnchangedApplyDoesNotRestart() async {
         let h = Harness(), forwarding = sampleForwarding()
         h.supervisor.apply([forwarding])

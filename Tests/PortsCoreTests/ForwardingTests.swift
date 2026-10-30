@@ -16,6 +16,7 @@ final class ForwardingTests: XCTestCase {
             original.sshPort = 2222
             original.localBindAddress = "::1"
             original.hostKeyPolicy = .acceptNew
+            original.groupID = UUID()
             let copy = original.duplicated()
 
             XCTAssertNotEqual(copy.id, original.id)

@@ -47,6 +47,12 @@ import PortsCore
             Form {
                 Section {
                     TextField("Label", text: $forwarding.label, prompt: Text("Development database"))
+                    Picker("Group", selection: $forwarding.groupID) {
+                        Text("Ungrouped").tag(nil as UUID?)
+                        ForEach(store.groups) { group in
+                            Text(group.name).tag(Optional(group.id))
+                        }
+                    }
                     Toggle("Keep this forwarding enabled", isOn: $forwarding.isEnabled)
                 }
                 Section {

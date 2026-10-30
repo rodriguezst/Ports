@@ -47,6 +47,16 @@ To start from an existing configuration, select it in Settings and choose **Dupl
 
 Connection statuses and the connected count update while the menu bar menu is open, including when a tunnel connects, disconnects, or starts retrying.
 
+### Groups
+
+Choose **+ → New Group…** in Settings, give the group a name, and select **Create Group**. Select the group and use **Add Forwarding…** to create as many port forwardings as you need. New forwardings use the selected group automatically. To move an existing forwarding, choose **Edit…** and change its **Group**; **Ungrouped** removes it from a group. Duplicates stay in the original group and start disabled.
+
+Select a group in Settings to see its ports and use **Enable All** or **Disable All**. In the menu bar, click the group’s name to enable every member; click again when all members are enabled to disable them. A tick means all members are enabled, a dash means some are enabled, and the counts show enabled and connected ports separately. Individual ports can still be toggled independently. Empty groups cannot be enabled.
+
+Enabling a group checks all its local listeners against each other and against other enabled ports before saving or starting any member. If a conflict is found, the whole change is rejected and the existing enabled choices are kept. Each enabled port reconnects independently through outages and sleep.
+
+Groups can be renamed or deleted from their detail view. Deleting a group moves its ports to **Ungrouped**, preserving their connection settings, credentials, and enabled choices. Moving ports between groups does not interrupt their SSH sessions. Groups and membership are saved with the connections and restored when Ports starts. Existing configurations load with all ports ungrouped and are upgraded when next saved; the upgraded configuration requires this version of Ports or later.
+
 For example, forwarding `127.0.0.1:15432` through `deploy@bastion.example.com:22` to `db.internal:5432` lets local applications access the remote database at `127.0.0.1:15432`. The destination address is resolved by the SSH host; destination `localhost` refers to that remote host.
 
 Bind to `127.0.0.1` or `::1` for access from your Mac. Binding to `0.0.0.0`, `::`, or a LAN interface makes the local listener accessible on those interfaces. IPv4 and IPv6 addresses are supported. Ports reports listener binding errors and prevents enabled entries with obviously overlapping local listeners.
@@ -59,7 +69,7 @@ Bind to `127.0.0.1` or `::1` for access from your Mac. Binding to `0.0.0.0`, `::
 
 Passwords and passphrases are separate Keychain entries per forwarding and authentication type. OpenSSH retrieves them through Ports' askpass helper mode. Secrets are never written into the JSON configuration, command arguments, or environment variables. The app and helper use the same executable. Keychain may ask for access permission, especially after rebuilding or changing the code signature.
 
-Connection settings and enabled flags are saved atomically to:
+Connection settings, groups, and enabled flags are saved atomically to:
 
 ```text
 ~/Library/Application Support/Ports/forwardings.json
@@ -89,5 +99,7 @@ Each forwarding has independent desired state, SSH process, status, timeout, and
 - `scripts/build-app.sh`: release app packaging and signing.
 
 For a manual macOS check, add a forwarding to an SSH host you control, verify data reaches the destination, disconnect/reconnect Wi-Fi, sleep/wake your Mac, disable an entry while it is retrying, edit an enabled entry, and quit/reopen Ports. Confirm ticks persist through outages, disabled entries stay stopped, and no listener remains after quitting. Duplicate an enabled forwarding, change its label and ports, and confirm it saves disabled without changing the original. Keep the menu open through a connection or network transition and confirm the status and connected count change without reopening it.
+
+Create a group, add two ports to it, and toggle them together in Settings and the menu bar. Toggle one port independently and confirm the group shows a dash. Try enabling a group with overlapping local ports and confirm every enabled choice stays unchanged. Rename the group, move a connected port to another group, and delete the group; confirm ports keep running and credentials stay available. Reopen Ports to check group membership and enabled choices are restored.
 
 Implementation references: [Apple NSStatusItem](https://developer.apple.com/documentation/appkit/nsstatusitem), [OpenSSH client](https://man.openbsd.org/ssh.1), [OpenSSH connection options](https://man.openbsd.org/ssh_config.5), and [GitHub's macOS runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).

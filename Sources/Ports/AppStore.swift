@@ -4,7 +4,7 @@ import Network
 import PortsCore
 
 @MainActor final class AppStore: ObservableObject {
-    @Published private(set) var forwardings: [Forwarding] = []
+    @Published private(set) var configuration = Configuration()
     @Published private(set) var states: [UUID: TunnelState] = [:]
     @Published var errorMessage: String?
     @Published private(set) var configurationUnavailable = false
@@ -15,6 +15,8 @@ import PortsCore
     private let monitor = NWPathMonitor()
 
     var hasRunningSessions: Bool { supervisor.hasRunningSessions }
+    var forwardings: [Forwarding] { configuration.forwardings }
+    var groups: [ForwardingGroup] { configuration.groups }
 
     init() {
         configurationURL = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
@@ -40,8 +42,8 @@ import PortsCore
         do {
             let loaded = try persistence.load()
             configurationUnavailable = false
-            forwardings = loaded
-            supervisor.apply(loaded)
+            configuration = loaded
+            supervisor.apply(loaded.forwardings)
         } catch {
             // Never replace an unreadable configuration with an empty document.
             configurationUnavailable = true
@@ -74,10 +76,12 @@ import PortsCore
             throw ConfigurationError("Enter an SSH password. Ports stores it securely in your login Keychain.")
         }
         var next = forwardings
-        let previous = next.first { $0.id == forwarding.id }
+        var previous = next.first { $0.id == forwarding.id }
+        previous?.groupID = forwarding.groupID
         if let index = next.firstIndex(where: { $0.id == forwarding.id }) { next[index] = forwarding }
         else { next.append(forwarding) }
-        try Forwarding.validateAll(next)
+        let nextConfiguration = Configuration(forwardings: next, groups: groups)
+        try nextConfiguration.validate()
 
         // Roll back a credential edit if the configuration cannot be saved.
         var previousSecret: String?
@@ -85,16 +89,16 @@ import PortsCore
             previousSecret = try KeychainCredentials.read(id: forwarding.id, kind: forwarding.authentication)
             try KeychainCredentials.write(secret, id: forwarding.id, kind: forwarding.authentication)
         }
-        do { try persistence.save(next) }
+        do { try persistence.save(nextConfiguration) }
         catch {
             if secret != nil, forwarding.authentication != .agent {
                 try? KeychainCredentials.write(previousSecret ?? "", id: forwarding.id, kind: forwarding.authentication)
             }
             throw error
         }
-        forwardings = next
+        configuration = nextConfiguration
         supervisor.apply(next)
-        // Updating a saved credential also restarts an otherwise unchanged configuration.
+        // Group changes do not restart SSH, but a saved credential change must.
         if secret != nil, forwarding.isEnabled, previous == forwarding { supervisor.reconnect(forwarding.id) }
     }
 
@@ -103,21 +107,44 @@ import PortsCore
         var next = forwardings
         next[index].isEnabled = enabled
         do {
-            try persistence.save(next)
-            forwardings = next
-            supervisor.apply(next)
+            try commit(Configuration(forwardings: next, groups: groups))
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    func saveGroup(_ group: ForwardingGroup) throws {
+        guard !configurationUnavailable else { throw ConfigurationError("Reload the configuration before making changes.") }
+        var next = configuration
+        let group = group.normalized()
+        if let index = next.groups.firstIndex(where: { $0.id == group.id }) { next.groups[index] = group }
+        else { next.groups.append(group) }
+        try commit(next)
+    }
+
+    func setGroupEnabled(_ enabled: Bool, id: UUID) {
+        guard !configurationUnavailable else { return }
+        do { try commit(configuration.settingGroupEnabled(enabled, id: id)) }
+        catch { errorMessage = error.localizedDescription }
+    }
+
+    func deleteGroup(_ id: UUID) {
+        guard !configurationUnavailable else { return }
+        do { try commit(configuration.removingGroup(id)) }
+        catch { errorMessage = error.localizedDescription }
     }
 
     func delete(_ id: UUID) {
         guard !configurationUnavailable else { return }
         let next = forwardings.filter { $0.id != id }
         do {
-            try persistence.save(next)
-            forwardings = next
-            supervisor.apply(next)
+            try commit(Configuration(forwardings: next, groups: groups))
             try KeychainCredentials.delete(id: id)
         } catch { errorMessage = error.localizedDescription }
+    }
+
+    private func commit(_ next: Configuration) throws {
+        try persistence.save(next)
+        configuration = next
+        supervisor.apply(next.forwardings)
     }
 
     func reconnect(_ id: UUID) { supervisor.reconnect(id) }

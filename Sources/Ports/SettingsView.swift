@@ -9,13 +9,34 @@ private struct EditorRequest: Identifiable {
     var id: UUID { forwarding.id }
 }
 
+private struct GroupEditorRequest: Identifiable {
+    let group: ForwardingGroup
+    let isNew: Bool
+    var id: UUID { group.id }
+}
+
+private enum SettingsSelection: Hashable {
+    case forwarding(UUID)
+    case group(UUID)
+}
+
 @MainActor struct SettingsView: View {
     @ObservedObject var store: AppStore
-    @State private var selection: UUID?
+    @State private var selection: SettingsSelection?
     @State private var editor: EditorRequest?
     @State private var confirmingDeletion = false
+    @State private var groupEditor: GroupEditorRequest?
+    @State private var confirmingGroupDeletion = false
 
-    private var selected: Forwarding? { store.forwardings.first { $0.id == selection } }
+    private var selected: Forwarding? {
+        guard case .forwarding(let id) = selection else { return nil }
+        return store.forwardings.first { $0.id == id }
+    }
+
+    private var selectedGroup: ForwardingGroup? {
+        guard case .group(let id) = selection else { return nil }
+        return store.groups.first { $0.id == id }
+    }
 
     var body: some View {
         NavigationSplitView {
@@ -23,34 +44,32 @@ private struct EditorRequest: Identifiable {
                 HStack {
                     Text("Forwardings").font(.headline)
                     Spacer()
-                    Button(action: add) { Image(systemName: "plus") }
-                        .buttonStyle(.borderless)
-                        .help("Add a port forwarding")
-                        .disabled(store.configurationUnavailable)
+                    Menu {
+                        Button("Add Forwarding…", action: add)
+                        Button("New Group…", action: addGroup)
+                    } label: { Image(systemName: "plus") }
+                    .menuStyle(.borderlessButton)
+                    .fixedSize()
+                    .help("Add a forwarding or group")
+                    .disabled(store.configurationUnavailable)
                 }
                 .padding(16)
                 List(selection: $selection) {
-                    ForEach(store.forwardings) { forwarding in
-                        HStack(spacing: 10) {
-                            StateIndicator(state: store.states[forwarding.id] ?? .disabled, compact: true)
-                            VStack(alignment: .leading, spacing: 4) {
-                                Text(forwarding.label).fontWeight(.medium).lineLimit(1)
-                                Text(forwarding.localEndpoint)
-                                    .font(.system(.caption, design: .monospaced))
-                                    .foregroundStyle(.secondary)
-                                    .lineLimit(1)
-                            }
-                            Spacer(minLength: 0)
-                            if forwarding.isEnabled {
-                                Image(systemName: "checkmark").font(.caption.weight(.semibold))
-                                    .accessibilityLabel("Enabled")
+                    ForEach(store.groups) { group in
+                        groupRow(group)
+                        ForEach(store.configuration.members(of: group.id)) { forwarding in
+                            forwardingRow(forwarding).padding(.leading, 12)
+                        }
+                    }
+                    if !store.groups.isEmpty && !store.configuration.members(of: nil).isEmpty {
+                        Section("Ungrouped") {
+                            ForEach(store.configuration.members(of: nil)) { forwarding in
+                                forwardingRow(forwarding)
                             }
                         }
-                        .padding(.vertical, 5)
-                        .tag(forwarding.id)
-                        .contextMenu {
-                            Button("Duplicate…") { duplicate(forwarding) }
-                                .disabled(store.configurationUnavailable)
+                    } else {
+                        ForEach(store.configuration.members(of: nil)) { forwarding in
+                            forwardingRow(forwarding)
                         }
                     }
                 }
@@ -78,9 +97,16 @@ private struct EditorRequest: Identifiable {
                     Button("Reload Configuration") { store.loadConfiguration() }
                         .buttonStyle(.borderedProminent)
                 }.padding(36)
+            } else if let selectedGroup {
+                ForwardingGroupDetail(store: store, group: selectedGroup,
+                                      add: { addForwarding(to: selectedGroup.id) },
+                                      edit: { groupEditor = GroupEditorRequest(group: selectedGroup, isNew: false) },
+                                      delete: { confirmingGroupDeletion = true },
+                                      select: { selection = .forwarding($0) })
             } else if let selected {
                 ForwardingDetail(
                     forwarding: selected,
+                    groupName: store.groups.first { $0.id == selected.groupID }?.name,
                     state: store.states[selected.id] ?? .disabled,
                     setEnabled: { store.setEnabled($0, id: selected.id) },
                     edit: { editor = EditorRequest(forwarding: selected, isNew: false) },
@@ -98,6 +124,7 @@ private struct EditorRequest: Identifiable {
                         .foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 380)
                     Button(action: add) { Label("Add Forwarding", systemImage: "plus") }
                         .buttonStyle(.borderedProminent).controlSize(.large)
+                    Button("New Group…", action: addGroup)
                 }.padding(36)
             }
         }
@@ -105,8 +132,14 @@ private struct EditorRequest: Identifiable {
         .sheet(item: $editor) { request in
             ForwardingEditor(store: store, forwarding: request.forwarding, isNew: request.isNew,
                              credentialSource: request.credentialSource) { savedID in
-                selection = savedID
+                selection = .forwarding(savedID)
                 editor = nil
+            }
+        }
+        .sheet(item: $groupEditor) { request in
+            ForwardingGroupEditor(store: store, group: request.group, isNew: request.isNew) { savedID in
+                selection = .group(savedID)
+                groupEditor = nil
             }
         }
         .alert("Ports", isPresented: Binding(
@@ -117,15 +150,80 @@ private struct EditorRequest: Identifiable {
         .alert("Delete “\(selected?.label ?? "forwarding")”?", isPresented: $confirmingDeletion) {
             Button("Cancel", role: .cancel) {}
             Button("Delete", role: .destructive) {
-                if let selection { store.delete(selection) }
-                selection = store.forwardings.first?.id
+                if let selected { store.delete(selected.id) }
+                selection = store.forwardings.first.map { .forwarding($0.id) }
             }
         } message: { Text("This stops the forwarding and removes its saved credentials from Keychain.") }
-        .onAppear { if selection == nil { selection = store.forwardings.first?.id } }
+        .alert("Delete “\(selectedGroup?.name ?? "group")”?", isPresented: $confirmingGroupDeletion) {
+            Button("Cancel", role: .cancel) {}
+            Button("Delete Group", role: .destructive) {
+                if let selectedGroup { store.deleteGroup(selectedGroup.id) }
+                selection = nil
+            }
+        } message: { Text("Its forwardings will become ungrouped and keep their enabled settings.") }
+        .onAppear {
+            if selection == nil { selection = store.forwardings.first.map { .forwarding($0.id) } }
+        }
     }
 
     private func add() {
-        editor = EditorRequest(forwarding: Forwarding(sshUsername: NSUserName()), isNew: true)
+        addForwarding(to: selectedGroup?.id ?? selected?.groupID)
+    }
+
+    private func addForwarding(to groupID: UUID?) {
+        editor = EditorRequest(forwarding: Forwarding(sshUsername: NSUserName(), groupID: groupID), isNew: true)
+    }
+
+    private func addGroup() {
+        groupEditor = GroupEditorRequest(group: ForwardingGroup(), isNew: true)
+    }
+
+    private func forwardingRow(_ forwarding: Forwarding) -> some View {
+        HStack(spacing: 10) {
+            StateIndicator(state: store.states[forwarding.id] ?? .disabled, compact: true)
+            VStack(alignment: .leading, spacing: 4) {
+                Text(forwarding.label).fontWeight(.medium).lineLimit(1)
+                Text(forwarding.localEndpoint)
+                    .font(.system(.caption, design: .monospaced))
+                    .foregroundStyle(.secondary).lineLimit(1)
+            }
+            Spacer(minLength: 0)
+            if forwarding.isEnabled {
+                Image(systemName: "checkmark").font(.caption.weight(.semibold))
+                    .accessibilityLabel("Enabled")
+            }
+        }
+        .padding(.vertical, 5)
+        .tag(SettingsSelection.forwarding(forwarding.id))
+        .contextMenu {
+            Button("Duplicate…") { duplicate(forwarding) }
+                .disabled(store.configurationUnavailable)
+        }
+    }
+
+    private func groupRow(_ group: ForwardingGroup) -> some View {
+        let members = store.configuration.members(of: group.id)
+        let state = store.configuration.enabledState(of: group.id)
+        return HStack(spacing: 10) {
+            Image(systemName: "folder").foregroundStyle(.tint)
+            Text(group.name).fontWeight(.semibold).lineLimit(1)
+            Spacer(minLength: 0)
+            Text("\(members.count)").font(.caption).foregroundStyle(.secondary)
+            if state != .disabled {
+                Image(systemName: state == .enabled ? "checkmark" : "minus")
+                    .font(.caption.weight(.semibold))
+                    .accessibilityLabel(state == .enabled ? "All enabled" : "Some enabled")
+            }
+        }
+        .padding(.vertical, 5)
+        .tag(SettingsSelection.group(group.id))
+        .contextMenu {
+            Button("Add Forwarding…") { addForwarding(to: group.id) }
+            Button(state == .enabled ? "Disable All" : "Enable All") {
+                store.setGroupEnabled(state != .enabled, id: group.id)
+            }.disabled(members.isEmpty)
+            Button("Rename…") { groupEditor = GroupEditorRequest(group: group, isNew: false) }
+        }
     }
 
     private func duplicate(_ forwarding: Forwarding) {
@@ -134,8 +232,73 @@ private struct EditorRequest: Identifiable {
     }
 }
 
+@MainActor private struct ForwardingGroupDetail: View {
+    @ObservedObject var store: AppStore
+    let group: ForwardingGroup
+    let add: () -> Void
+    let edit: () -> Void
+    let delete: () -> Void
+    let select: (UUID) -> Void
+
+    private var members: [Forwarding] { store.configuration.members(of: group.id) }
+    private var enabledCount: Int { members.filter(\.isEnabled).count }
+    private var connectedCount: Int { members.filter { store.states[$0.id] == .connected }.count }
+
+    var body: some View {
+        ScrollView {
+            VStack(alignment: .leading, spacing: 22) {
+                Label(group.name, systemImage: "folder").font(.largeTitle.weight(.semibold))
+                    .textSelection(.enabled)
+                Text("\(enabledCount) of \(members.count) enabled · \(connectedCount) connected")
+                    .foregroundStyle(.secondary)
+                HStack {
+                    Button("Enable All") { store.setGroupEnabled(true, id: group.id) }
+                        .disabled(members.isEmpty || enabledCount == members.count)
+                    Button("Disable All") { store.setGroupEnabled(false, id: group.id) }
+                        .disabled(enabledCount == 0)
+                }
+                if members.isEmpty {
+                    Text("Add port forwardings to this group, or choose this group when editing an existing forwarding.")
+                        .foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+                } else {
+                    ForEach(members) { forwarding in
+                        GroupBox {
+                            HStack {
+                                VStack(alignment: .leading, spacing: 6) {
+                                    Button(forwarding.label) { select(forwarding.id) }
+                                        .buttonStyle(.link).font(.headline)
+                                    Text("\(forwarding.localEndpoint) → \(forwarding.destinationEndpoint)")
+                                        .font(.caption.monospaced()).foregroundStyle(.secondary)
+                                    StateIndicator(state: store.states[forwarding.id] ?? .disabled)
+                                }
+                                Spacer()
+                                Toggle("Enabled", isOn: Binding(
+                                    get: { forwarding.isEnabled },
+                                    set: { store.setEnabled($0, id: forwarding.id) }
+                                )).toggleStyle(.switch).fixedSize()
+                            }.padding(8).frame(maxWidth: .infinity, alignment: .leading)
+                        }
+                    }
+                }
+                HStack {
+                    Button(action: add) { Label("Add Forwarding…", systemImage: "plus") }
+                        .buttonStyle(.borderedProminent)
+                    Button("Rename…", action: edit)
+                    Spacer()
+                    Button(role: .destructive, action: delete) { Image(systemName: "trash") }
+                        .help("Delete group")
+                }
+                Divider()
+                Text("Group controls change every forwarding’s enabled choice. Each port keeps its own connection status and reconnects independently.")
+                    .font(.caption).foregroundStyle(.secondary)
+            }.padding(28)
+        }
+    }
+}
+
 private struct ForwardingDetail: View {
     let forwarding: Forwarding
+    let groupName: String?
     let state: TunnelState
     let setEnabled: (Bool) -> Void
     let edit: () -> Void
@@ -175,6 +338,10 @@ private struct ForwardingDetail: View {
                 }
 
                 Grid(alignment: .leading, horizontalSpacing: 24, verticalSpacing: 12) {
+                    GridRow {
+                        Text("Group").foregroundStyle(.secondary)
+                        Text(groupName ?? "Ungrouped")
+                    }
                     GridRow {
                         Text("Authentication").foregroundStyle(.secondary)
                         Text(forwarding.authentication.title)
