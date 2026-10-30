@@ -132,6 +132,15 @@ import PortsCore
         catch { errorMessage = error.localizedDescription }
     }
 
+    @discardableResult
+    func importForwardings(from source: Configuration, selecting identifiers: Set<UUID>) throws -> [UUID] {
+        guard !configurationUnavailable else { throw ConfigurationError("Reload the configuration before making changes.") }
+        let next = try configuration.importingForwardings(from: source, selecting: identifiers)
+        let importedIDs = next.forwardings.dropFirst(forwardings.count).map(\.id)
+        try commit(next)
+        return importedIDs
+    }
+
     func delete(_ id: UUID) {
         guard !configurationUnavailable else { return }
         let next = forwardings.filter { $0.id != id }

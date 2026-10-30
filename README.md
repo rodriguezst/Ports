@@ -57,6 +57,14 @@ Enabling a group checks all its local listeners against each other and against o
 
 Groups can be renamed or deleted from their detail view. Deleting a group moves its ports to **Ungrouped**, preserving their connection settings, credentials, and enabled choices. Moving ports between groups does not interrupt their SSH sessions. Groups and membership are saved with the connections and restored when Ports starts. Existing configurations load with all ports ungrouped and are upgraded when next saved; the upgraded configuration requires this version of Ports or later.
 
+### Import and export
+
+Use **Export…** at the bottom of the Settings sidebar to open a popup listing your tunnels. Check the tunnels to include, or use **Select All** and **Deselect All**, then choose **Export…** and a location for the JSON file. You can export one tunnel, several tunnels, or all tunnels. Only the groups needed by the selected tunnels are included.
+
+Use **Import…** to choose an exported JSON file. A selection window shows its tunnels, grouped with their local, destination, and SSH endpoints. **All tunnels are preselected by default**; uncheck any you do not want, then choose **Import Selected**. Canceling either selection leaves your configuration unchanged. Ports also accepts its existing version 1 and version 2 configuration files.
+
+Imported tunnels are added as new, disabled entries, keeping existing tunnels and active sessions unchanged. Conflicting names receive an **(Imported)** suffix. Group membership is preserved, reusing unchanged groups that are already present and adding other required groups. No tunnels start automatically on import. Exports include authentication settings and private key paths, but exclude Keychain passwords, passphrases, and private key files. After importing, use **Edit…** to enter any required credentials or choose a key file on this Mac before enabling the tunnel.
+
 For example, forwarding `127.0.0.1:15432` through `deploy@bastion.example.com:22` to `db.internal:5432` lets local applications access the remote database at `127.0.0.1:15432`. The destination address is resolved by the SSH host; destination `localhost` refers to that remote host.
 
 Bind to `127.0.0.1` or `::1` for access from your Mac. Binding to `0.0.0.0`, `::`, or a LAN interface makes the local listener accessible on those interfaces. IPv4 and IPv6 addresses are supported. Ports reports listener binding errors and prevents enabled entries with obviously overlapping local listeners.
@@ -101,5 +109,7 @@ Each forwarding has independent desired state, SSH process, status, timeout, and
 For a manual macOS check, add a forwarding to an SSH host you control, verify data reaches the destination, disconnect/reconnect Wi-Fi, sleep/wake your Mac, disable an entry while it is retrying, edit an enabled entry, and quit/reopen Ports. Confirm ticks persist through outages, disabled entries stay stopped, and no listener remains after quitting. Duplicate an enabled forwarding, change its label and ports, and confirm it saves disabled without changing the original. Keep the menu open through a connection or network transition and confirm the status and connected count change without reopening it.
 
 Create a group, add two ports to it, and toggle them together in Settings and the menu bar. Toggle one port independently and confirm the group shows a dash. Try enabling a group with overlapping local ports and confirm every enabled choice stays unchanged. Rename the group, move a connected port to another group, and delete the group; confirm ports keep running and credentials stay available. Reopen Ports to check group membership and enabled choices are restored.
+
+Export one tunnel, then several tunnels from different groups. Import each file, confirm all tunnels start selected, deselect some, and verify only the selected entries are added disabled. Repeat an import to check duplicate names are adjusted and existing connections stay running. Cancel the file and selection dialogs and try a malformed JSON file; confirm saved tunnels are unchanged.
 
 Implementation references: [Apple NSStatusItem](https://developer.apple.com/documentation/appkit/nsstatusitem), [OpenSSH client](https://man.openbsd.org/ssh.1), [OpenSSH connection options](https://man.openbsd.org/ssh_config.5), and [GitHub's macOS runner reference](https://docs.github.com/en/actions/reference/runners/github-hosted-runners).

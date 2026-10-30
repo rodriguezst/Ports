@@ -51,6 +51,20 @@ import XCTest
 }
 
 @MainActor final class TunnelSupervisorTests: XCTestCase {
+    func testImportLeavesExistingSessionConnectedAndDoesNotStartImportedTunnels() async throws {
+        let h = Harness()
+        let forwarding = sampleForwarding()
+        let configuration = Configuration(forwardings: [forwarding])
+        h.supervisor.apply(configuration.forwardings)
+        h.sessions[0].emit(.ready)
+        let imported = try configuration.importingForwardings(from: configuration, selecting: [forwarding.id])
+        h.supervisor.apply(imported.forwardings)
+        XCTAssertEqual(h.sessions.count, 1)
+        XCTAssertEqual(h.sessions[0].stops, 0)
+        XCTAssertEqual(h.supervisor.states[forwarding.id], .connected)
+        XCTAssertEqual(h.supervisor.states[imported.forwardings[1].id], .disabled)
+    }
+
     func testChangingOrRemovingGroupMembershipDoesNotRestartConnectedTunnel() async {
         let h = Harness()
         var forwarding = sampleForwarding()

@@ -75,6 +75,9 @@ private enum SettingsSelection: Hashable {
                 }
                 .listStyle(.sidebar)
                 Divider()
+                TunnelTransferControls(store: store) { selection = .forwarding($0) }
+                    .padding(.horizontal, 14).padding(.vertical, 10)
+                Divider()
                 HStack {
                     Text("\(store.forwardings.filter(\.isEnabled).count) enabled")
                     Spacer()
